@@ -1,0 +1,382 @@
+---
+title: "Compétence entrepreneuriale des étudiants"
+author: "Charline Barbe, Louis Lacaze-Masmonteil, Fanny Sauvée"
+date: "30/06/2021"
+output:
+  html_document: 
+    toc: yes
+  pdf_document: default
+---
+
+```{r setup, echo =TRUE, include=FALSE, warning=FALSE, message=FALSE, fig.width = 10}
+ 
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message= FALSE, fig.width = 10)
+```
+
+Source des données : https://www.kaggle.com/namanmanchanda/entrepreneurial-competency-in-university-students
+
+# **Quels facteurs poussent un étudiant en Inde à vouloir entrepreneur ?** 
+
+## Introduction
+
+L’objet de cette étude est de comprendre les facteurs qui influent sur l'envie d'un étudiant de devenir un entrepreneur et ainsi savoir prédire si un étudiant est susceptible de le devenir, à partir de données d’étudiants indiens.
+ 
+Les entrepreneurs façonnant le monde de demain, l'Inde est une plaque tournante mondiale et de nombreuses start-ups en émergent et rivalisent avec le monde entier dans divers domaines. Le gouvernement indien encourage l'entrepreneuriat à l'échelle nationale depuis de nombreuses années, mais la majorité des jeunes Indiens ne se lancent pas dans l'aventure. Notre objectif est de déterminer la cause du manque de compétence entrepreneuriale chez les étudiants universitaires pour l'améliorer.
+ 
+Notre analyse se basera notamment sur l’identification de corrélations entre les différents traits de personnalité associés à l'esprit d'entreprise et des données sociodémographiques en utilisant des data collectées auprès de 198 étudiants universitaires à travers l'Inde. Cet échantillon n’est pas forcément représentatif mais permet déjà de dégager certaines réponses à la problématique.
+ 
+On explore de manière systématique l’influence de l’environnement, de la personnalité, des caractéristiques personnelles...
+On utilise une suite d’outils autour du langage r : rstudio en utilisant un script rmarkdown.
+
+# Préparation des données et premières observations
+
+* On dispose d’1 fichier de données : 198 étudiants, 17 colonnes : structure simple, mais à recoder afin de produire une analyse plus fine. 
+* Il s'agit d'un dataset collecté en 2016, qui regroupe 16 caractéristiques recueillies auprès d'étudiants à l’Université en Inde. (secteur d’études, traits de caractère, influences…) 
+* variable cible =déterminer si l'étudiant est susceptible de devenir un entrepreneur ou non.
+
+## Package
+
+Les packages utilisés dans l’ensemble de l’analyse sont les suivants
+
+```{r}
+library(tidyverse)
+library(reshape2)
+library(ggcorrplot)
+library(ppcor)
+library(psych)
+library(gridExtra)
+library(jtools)
+library(interactions)
+library(GGally)
+library(viridis)
+library(igraph)
+library(lavaan)
+library(semTools)
+library(semPlot)
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(corrplot)
+library(lme4)
+library(ggstance)
+
+```
+
+
+## Recodage
+
+Nous devons recoder quelques variables : 
+
+```{r}
+theme_set(theme_bw())
+df <- read_csv("data.csv")
+```{r recodage}
+min(df$Age)
+max(df$Age)
+ 
+ 
+df$Age[df$Age==26]<-"26 ans"
+df$Age[df$Age==25]<-"25 ans"
+df$Age[df$Age==24]<-"24 ans"
+df$Age[df$Age==23]<-"23 ans"
+df$Age[df$Age==22]<-"22 ans"
+df$Age[df$Age==21]<-"21 ans"
+df$Age[df$Age==20]<-"20 ans"
+df$Age[df$Age==19]<-"19 ans"
+df$Age[df$Age==18]<-"18 ans"
+df$Age[df$Age==17]<-"17 ans"
+df$Entrepreneurial <- as.integer(is.na(df$ReasonsForLack))
+df_cor<-df[,c('Entrepreneurial')]
+df_box <- df
+df_box$Entrepreneurial[which(df_box$Entrepreneurial==1)]<-"Oui"
+df_box$Entrepreneurial[which(df_box$Entrepreneurial=="0")]<-"Non"
+
+```
+
+## Description de l’échantillon et de la distribution des variables
+
+###  1-Répartition des genres
+
+Nous commençons par faire de simples observations sur le dataset.
+Nous analysons d’abord la distribution de la variable sexe pour déterminer si l’échantillon est neutre ou non
+* Les résultats indiquent une net surreprésentation des hommes. Ainsi l’échantillon n’est pas totalement neutre. Il faudra prendre en compte ce facteur dans les prochaines analyses de corrélations.
+
+```{r}
+var_cam2 <- df$Gender
+table(var_cam2)
+ 
+df_cam2 <- data.frame(sector = rownames(table(var_cam2)), number = unclass(table(var_cam2)))
+head(df_cam2)
+ 
+cam2 <- ggplot(df_cam2, aes(x="", y=number, fill=sector))+
+  geom_bar(width = 1, stat = "identity")+ coord_polar("y", start=0,direction=1)+
+  geom_text(aes(y = c(210,3),
+        	  label=paste(round(number/sum(number)*100,2), "%")),size=3)
+cam2
+
+```
+
+
+### 2-    Répartition des domaines d’études
+
+   Le domaine d’études dominant largement est sciences de l’ingénieur qui totalise plus de 50% de l’ensemble des domaines. Il est suivi lointainement par le triple cursus en science économique, études commerciales et commerce et droit.
+   
+```{r}
+var_cam <- df$EducationSector
+table(var_cam)
+ 
+df_cam <- data.frame(sector = rownames(table(var_cam)), number = unclass(table(var_cam)))
+head(df_cam)
+ 
+cam <- ggplot(df_cam, aes(x="", y=number, fill=sector))+
+  geom_bar(width = 1, stat = "identity")+ coord_polar("y", start=0,direction=1)+
+  geom_text(aes(y = c(210,182,110,42,38,35,28,15,3),
+                label=paste(round(number/sum(number)*100,2), "%")),size=3)
+ 
+cam
+
+```
+
+
+### 3-Distribution des qualités
+
+Nous étudions maintenant la distribution des qualités.
+* Les traits de caractères persévérance et selfconfidence sont des variables particulièrement hétérogènes contrairement à ceux : desire to take initiative, compétitiveness, selfresilience et strong need to achieve, bien plus homogènes.
+* De même ces deux traits de caractères sont plus centrés. Les étudiants interrogés ont un indiqué leur persévérance comme un de leur trait de caractère ni faible, ni particulièrement fort.
+
+
+```{r}
+x <-cbind(df[,"Perseverance"],df["DesireToTakeInitiative"], df[,"Competitiveness"], df[,"SelfReliance"], df[,"StrongNeedToAchieve"],df[,"SelfConfidence"])
+r <- cor(x)
+y <-x %>% melt()
+ggplot(y,aes(x=value,group=variable))+geom_density(aes(fill=variable), alpha=.5)+facet_wrap(vars(variable))
+
+```
+
+
+## Analyse des corrélations
+
+### 1-    Corrélation des qualités entre elles
+
+* Nous pouvons observer une forte corrélation entre les qualités ce qui indique une même dimension d’attitude.
+* Chaque qualité semble avoir une relation presque concave avec les autres. Si nous prenons le cas de la persévérance et la compétitivité, plus la compétitivité est forte plus la persévérance l’est également, ce qui parait logique.
+* En revanche, pour certaines corrélations, à niveau faible la corrélation est négative pour ensuite redevenir positive. Par exemple pour le strong need to achieve et la persévérance.
+* Nous pouvons observer également que l’intensité de la corrélation entre chaque qualités semble presque homogène.
+* Cependant, un premier constat peut être établi sur la corrélation entre ces qualités et le fait de devenir un entrepreneur. La corrélation individuelle de chaque keytraits semble extrêmement minime. Néanmoins, utilisons un autre graphique pour étudier de plus près cette corrélation.
+
+```{r}
+ggpairs(x, title="Corrélation qualité entrepreneur - Correlogram",
+    	lower = list(continuous = wrap("smooth",  method = "loess"),color="pink",alpha = 0.2, size=0.1))
+```
+
+```{r}
+x <-df[,c("Perseverance","DesireToTakeInitiative","Competitiveness","SelfReliance","StrongNeedToAchieve","SelfConfidence","Entrepreneurial")]
+r <- cor(x)
+corrplot(r, type="upper", order="hclust", tl.col="black", tl.srt=45,diag = TRUE)
+ggcorrplot(r ,type = "lower",  lab = TRUE,title="Pearson correlation")
+```
+
+### 2-    Impact des qualités sur la probabilité de devenir entrepreneur
+
+On se rend compte que prises individuellement, *les qualités n'ont pas un coefficient de corrélation assez significatif pour expliquer à elles seules le fait de devenir entrepreneur ou non*. Cependant, la corrélation est systématiquement entre le fait de devenir entrepreneur et l'intensité ces qualités
+
+```{r}
+ggplot(df, aes(df$Perseverance,df$y)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE )
+cor(df$Perseverance, df$y )
+
+ggplot(df, aes(df$DesireToTakeInitiative,df$y)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE )
+cor(df$DesireToTakeInitiative, df$y )
+ 
+ggplot(df, aes(df$Competitiveness,df$y)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE )
+cor(df$Competitiveness, df$y )
+ 
+ggplot(df, aes(df$SelfReliance,df$y)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE )
+cor(df$SelfReliance, df$y )
+ 
+ggplot(df, aes(df$StrongNeedToAchieve,df$y)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE )
+cor(df$StrongNeedToAchieve, df$y )
+ 
+ggplot(df, aes(df$SelfConfidence,df$y)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE )
+cor(df$SelfConfidence, df$y )
+
+```
+
+### 3-Corrélation entre l’âge et la distribution des qualités
+
+Ce graphique met en évidence la distribution des qualités en fonction du genre.
+
+* Globalement on remarque que les qualités sont distribuées assez similairement de 17 à 22 ans. Après cet âge, il semble que les hommes présentent des traits plus marqués dans toutes ces qualités à part en ce qui concerne la confiance en soi.Dans un pays comme l'Inde où les ingéalités de genre sont fortement présentes, cette différence peut s'expliquer.  
+
+```{r}
+x1 <-cbind(df[,"Age"],df["Gender"],x)
+x1
+ 
+library(dplyr)
+library(viridis)
+ 
+ 
+foo<-x1 %>%
+  filter(Gender=="Female"| Gender=="Male") %>%
+  group_by(Gender,Age) %>%
+  summarise(Perseverance=mean(Perseverance),
+    	   	DesireToTakeInitiative=mean(DesireToTakeInitiative),
+    	   	Competitiveness=mean(Competitiveness),
+    	   	SelfReliance=mean(SelfReliance),
+    	   	StrongNeedToAchieve = mean(StrongNeedToAchieve),
+    	   	SelfConfidence = mean(SelfConfidence)
+  )
+ 
+foo
+foo<-melt(foo)
+foo
+ 
+ggplot(foo, aes(x=Age,y=value,group= Gender))+geom_line(aes(color= Gender), size=1.2)+
+  scale_color_viridis(discrete=TRUE)+
+  ylim(0,10)+ facet_wrap(.~variable,ncol=2)+
+  theme(axis.text.x = element_text(angle = 60, vjust = 0.5, hjust=.5))
+ 
+ 
+ 
+ggsave("intent1.jpeg",plot=last_plot(), width = 18, height = 14, units = "cm")
+
+```
+
+### 4-    Test des effets de profils
+
+* Cette représentation met en évidence que les variables 'desire to take initiative' et 'Strong need to achieve' sont celles qui ont le plus d'impact.
+
+* De manière difficile à expliquer, les étudiants de 26 ans ont très peu de probabilité de devenir entrepreneur. Cela peut être lié au fait qu'à 26 les étudiants ne le sont plus vraiment et ont déjà un travail qui les empêchent d'avoir le temps de se consacrer à l'entrepreneuriat.
+
+* Le double critère 'selfresiliance' et '26 ans', et 'competitivness' et '24 ans' semble avoir le plus d’impact sur la variable d’entreprenariat
+
+```{r}
+y<-melt(data = x1, id.vars=c("Age", "Gender"))
+fit<-lm(value~variable+ Age+ Gender + variable:Age+variable:Gender, y)
+anova(fit)
+plot_summs(fit)
+```
+
+### 5- Corrélation entre les qualités et l’âge
+
+Ce graphique se concentre sur l'impact de l’âge sur ces qualités.
+
+* On remarque deux pics. Un positif autour de 24 ans et un fortement négatif à 26 ans. Trouver la raison à cette répartition nécessite d'en savoir plus sur le cycle d'études des étudiants de l'échantillon.
+
+```{r}
+cat_plot(fit,pred=Age, modx = variable, int.width=.2, dodge.width=0)+geom_line(aes(color=variable), size=2)+ylim(0,10)
+```
+
+### 6-    Corrélation entre le genre et les qualités
+ 
+* Sans prendre en compte les différences de l'âge, cette représentation montre que le genre n'a pas un impact décisif sur les traits de caractère, eux-mêmes déterminants dans leur ensemble pour devenir entrepreneur.
+
+```{r}
+cat_plot(fit,pred=Gender, modx = variable, int.width=.2,dodge.width=0)+geom_line(aes(color=variable), size=2)+ylim(0,10)
+```
+
+### 7-    Corrélation entre les qualités et le fait ou non d’avoir réalisé un projet personnel
+ 
+* Chaque keytraits semble avoir une influence forte sur le fait d’avoir réaliser un projet personnel. Il faut souligner que la variable la plus impactante est work ethic et celle la moins déterminante est la vision
+
+```{r}
+test<- names(table(df$KeyTraits))
+test2 <- unlist(lapply(1:5,function(x) x<-sum(df$IndividualProject[which(df$KeyTraits==test[x])]=="Yes")))
+test3 <- unclass(table(df$KeyTraits))
+df_test<-data.frame(KeyTraits = unique(df$KeyTraits), freq = test2/test3*100)
+test4 <- test2/test3*100
+ 
+ggplot(df_test,
+   	aes(x = KeyTraits,
+       	y = freq))  +geom_bar(fill = "#0073C2FF", stat = "identity")+
+geom_text(aes(label = paste(round(freq,2),"%")), vjust = -0.3)+labs(title="Proportion of person having worked on an indivuel project, according to their KeyTraits")
+
+```
+
+### 8-    Corrélation entre le fait de vivre en ville et d’avoir un projet personnel
+
+* Indirectement nous observons que les étudiants vivant en ville sont majoritaires.
+
+* Les étudiants vivant en ville ont largement entrepris des projets personnels.
+
+Les étudiants vivant en dehors de la ville ont quant à eux répondu légèrement plus non à la question de s’il avait entrepris un projet personnel. Ainsi la variable géographique semble avoir un impact sur le fait d’avoir entrepris un projet personnel
+
+```{r}
+ggplot(df,
+ 	  aes(x = City,
+       	fill = IndividualProject)) +
+  geom_bar(position = position_dodge(preserve = "single"))+labs(title="Relation between IndividualProject and living in a city")
+
+```
+
+### 9-    Corrélation entre toutes les variables
+ 
+* Le fait de devenir entrepreneur ne semble *pas fortement corrélé avec chaque variable individuellement*.
+On voit encore une fois bien que toutes *les qualités sont très corrélées entre elles*, mais *aucune n'a individuellement un impact sur l'envie d'entreprendre*. C'est donc un *cocktail de facteurs* qui pousse à vouloir entreprendre. On peut voir dans la matrice de corrélation globale (la dernière) que le facteur le plus impactant, même si dans une faible mesure, est *le fait d'avoir un modèle qui influence l'étudiant dans ses choix de vie*. 
+Egalement, on constate une corrélation négative entre l'âge et le fait de vivre en ville.
+
+```{r}
+x <-df[,c("Perseverance","DesireToTakeInitiative","Competitiveness","SelfReliance","StrongNeedToAchieve","SelfConfidence","Entrepreneurial")]
+r <- cor(x)
+corrplot(r, type="upper", order="hclust", tl.col="black", tl.srt=45,diag = TRUE)
+ggcorrplot(r ,type = "lower",  lab = TRUE,title="Pearson correlation")
+ 
+ 
+df_cor <- df[,c("Perseverance","DesireToTakeInitiative","Competitiveness","SelfReliance","StrongNeedToAchieve","SelfConfidence","Entrepreneurial","Age","Gender","City","Influenced","MentalDisorder")]
+df_cor$City<-as.integer((df_cor$City=="Yes"))
+df_cor$Influenced<-as.integer((df_cor$Influenced=="Yes"))
+df_cor$MentalDisorder<-as.integer((df_cor$MentalDisorder=="Yes"))
+df_cor$Gender<-as.integer((df_cor$Gender=="Male"))
+df_cor$Age = df_cor$Age = as.numeric(str_sub(df_cor$Age, start = 1L, end = 2L))
+
+corrplot(cor(df_cor), type="upper", order="hclust", tl.col="black", tl.srt=45,diag = TRUE)
+```
+
+
+### 10- Corrélation entre les qualités et l’entreprenariat
+ 
+Sur la colonne Pr(>F) nous pouvons observer l’impact de chaque donnée sur le fait qu’un étudiant entreprend ou non. Les chiffres nous laissent penser que chaque facteur a une influence minime sur le fait de devenir entrepreneur. Il semble tout de même que le fait d’avoir entrepris un projet individuel ait une influence bien plus faible; et inversement le trait de caractère Persévérant semble plus impacter la variable de l'entreprenariat. 
+
+```{r}
+rm(list=ls())
+ 
+library(lme4)
+ 
+df <- read.csv("data.csv", sep=",", head=TRUE)
+ 
+ 
+df$City<-as.factor(df$City)
+df$Age<-as.factor(df$Age)
+df$Perseverance<-as.factor(df$Perseverance)
+df$GoodPhysicalHealth<-as.factor(df$GoodPhysicalHealth)
+df$KeyTraits<-as.factor(df$KeyTraits)
+df$IndividualProject<-as.factor(df$IndividualProject)
+ 
+res_add <- lm(y ~ Gender + City + IndividualProject + Perseverance + KeyTraits, df)
+ 
+ 
+anova(res_add)
+res_add
+plot(res_add)
+
+```
+
+
+## Conclusions
+
+ 
+En conclusion, les données utilisées ne sont pas totalement neutres du fait de la surreprésentation des hommes étudiants par rapport aux femmes. Ce constat n’est pas étonnant au vu de la difficulté d’accès à l’éducation des femmes en Inde. Cependant, nous avons observé que le genre n’influe peu sur les qualités que considèrent posséder les étudiants et ne semble pas non plus influencer la variable d’entreprenariat.  
+Au niveau des traits de caractères, individuellement ils n’ont pas d’influence significative sur le fait de devenir entrepreneur. Néanmoins, c’est l’ensemble de ces qualités qui influence positivement l’entreprenariat. De plus, le groupement de l’âge et de ces traits de caractères influence également l’entreprenariat. En effet, à l’âge de 24 ans, les étudiants semblent plus enclins à entreprendre. Enfin, avons également observé que le fait de vivre en ville semble également influencer positivement l’entreprenariat.
+Ainsi, un étudiant homme de 24 ans, vivant en ville qui a un modèle d'influence dans sa vie et présentant l’ensemble des traits de caractères semble avoir plus de chance d’entreprendre que les autres.
+
